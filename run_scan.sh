@@ -3,6 +3,11 @@
 for f in `ls ../../data/garfield_data/*.txt` 
 do 
 	echo "File: $f"; 
+
+	python diffusion_effect.py $f;
+
+	continue
+
 	for t in 0.5 1 2 5 10
 	do 
 		echo "tau: $t";
@@ -13,4 +18,8 @@ do
 		done
 
 	done
+
+	
+
+
 done
