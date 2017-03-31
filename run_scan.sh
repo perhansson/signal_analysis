@@ -1,10 +1,24 @@
 #!/bin/bash
 
+
+
+#for f in `ls ../../data/garfield_data/*.root` 
+#do 
+#	echo "File: $f"; 
+#	python extract_waveform.py $f
+#done
+#exit 0
+
+
+
+
+
+
 for f in `ls ../../data/garfield_data/*.txt` 
 do 
 	echo "File: $f"; 
 
-	python diffusion_effect.py $f;
+	python diffusion_effect.py $f
 
 	continue
 
@@ -18,8 +32,5 @@ do
 		done
 
 	done
-
-	
-
 
 done

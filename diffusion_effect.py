@@ -27,8 +27,6 @@ if __name__ == '__main__':
     print('Just GO')
 
     args = get_args()
-
-
     
     Ts = 0.1e-6 # sampling interval in seconds
     Fs = 1.0/Ts # sampling rate in Hz
@@ -51,8 +49,6 @@ if __name__ == '__main__':
     Y = np.fft.fft(y) # /n FFT calculation
     Yp = Y[range(1,(n-1)/2+1)] # one sided
     Ym = Y[range((n+1)/2,n)] # one sided
-
-    
 
     
 
@@ -134,5 +130,8 @@ if __name__ == '__main__':
         ax2[0].text(0.01, 0.8, r'd={0:f}cm'.format(d), transform=ax2[0].transAxes, color='green', fontsize=10)
         fig2.savefig(saveFilename + '_diffused_input_signal.png',bbox_inches='tight')
 
-
+        with open( os.path.splitext(os.path.basename(args.file[0]))[0] + '_d{0:f}cm.npy'.format(d), 'w') as f:
+            np.savez(f, y=y, yd=yd,t=t,t_ext2=t_ext2)
+        
         #plt.show()
+

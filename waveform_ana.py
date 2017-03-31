@@ -7,6 +7,7 @@ import argparse
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt4agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt4agg import NavigationToolbar2QTAgg as NavigationToolbar
+import diffusion
 
 
 
@@ -16,10 +17,26 @@ def get_args():
     parser.add_argument('--freq', type=float, default=1.0, help='ADC frequency in Msps.')
     parser.add_argument('file', nargs=1, help='Data file.')
     parser.add_argument('--batch', action='store_true')
+    parser.add_argument('--distance','-d', default=360.0, help='Drift distance in cm.')
+    parser.add_argument('--diffusion', action='store_true', help='Add longitudinal diffusion to waveform.')
+    parser.add_argument('--filter', default='rc', help='Filter type')
     args = parser.parse_args()
     print(args)
     return args
     
+
+def gaus(*args):
+    return 1.0/np.exp( np.power(args[0],2)/(2*np.power(args[1],2)) )
+
+def rc(*args):
+    return np.exp(-args[0]/args[1])
+
+def rc_tf(*args):
+    return 1/np.sqrt(1 + np.square(2.0*np.pi*args[0]*args[1]))
+
+def gaus_tf(*args):
+    return 1.0/np.exp( np.power(args[0],2) / (2*np.power(args[1],2)) )
+
 
 
 if __name__ == '__main__':
@@ -38,22 +55,18 @@ if __name__ == '__main__':
     a = np.loadtxt(args.file[0])
     y = a[:,1]
     t = a[:,0]*1e-6 # turn into seconds
-
-
-    #y = y[len(y)/2:]
-    #t = t[len(t)/2:]
-
-
     n = len(y) # length of signal
     k = np.arange(n)
     T = n/Fs # length in time of signal
     frq = k/T # two side frequency range
     frq = frq[range(n/2)] # one side frequency range
 
-    # calculate FFT
+    # calculate FFT of input signal
     Y = np.fft.fft(y) # /n FFT calculation
-    Yp = Y[range(1,(n-1)/2+1)] # one sided
-    Ym = Y[range((n+1)/2,n)] # one sided
+    Yp = Y[range(1,(n-1)/2+1)] # one sided pos freq range
+    Ym = Y[range((n+1)/2,n)] # one sided neg freq range
+
+    
 
     # plot time signal and frequency spectrum of input signal
     fig1, ax1 = plt.subplots(2,1)
@@ -69,22 +82,56 @@ if __name__ == '__main__':
     fig1.savefig(saveFilename + '_input_signal.png',bbox_inches='tight')
     
 
-    # 1st order low-pass filter (RC)
-    #tau = 5.0e-6 #time constant
+
+
+    #### Filter
+    if args.filter == 'gaus':
+        imp = gaus
+        tf = gaus_tf
+        xmax = 5*tau
+        nbins = int(2*xmax/Ts)
+        #t_ir = np.arange(0,100)*Ts - 50*Ts # time axis    
+        t_ir = np.arange(0,nbins)*Ts - nbins*Ts/2 # time axis    
+    elif args.filter == 'rc':
+        imp = rc
+        tf = rc_tf
+        xmax = 5*tau
+        nbins = int(xmax/Ts)
+        t_ir = np.arange(0,nbins)*Ts # time axis    
+        #t_ir = np.arange(0,100)*Ts # time axis    
+    else:
+        print('invalid filter: ' + args.filter)
+
     fc = 1/(2*math.pi*tau) # cut-off frequency
-    t_ir = np.arange(0,100)*Ts # time axis    
-    y_ir = np.exp(-t_ir/tau) # impulse response
     #y_ir = np.exp(-t_ir/tau) # impulse response
+    print('Ts ' + str(Ts))
+    print('tau ' + str(tau))
+    print('t_ir)')
+    print(t_ir)
+    if args.filter == 'gaus':
+        y_ir = imp(t_ir,tau) # impulse response
+    elif args.filter == 'rc':
+        y_ir = imp(t_ir,tau) # impulse response        
+    print('y_ir)')
+    print(y_ir)    
     n_ir = len(y_ir) # number of samples
-    Ts_ir = tau # sampling time
+    Ts_ir = Ts # sampling time
     Fs_ir = 1/Ts_ir # sampling rate
     T_ir = n_ir/Fs_ir # total length
     frq_ir = np.arange(n_ir)/T_ir # frequency range    
-    K_ir = 2*math.pi*frq_ir*tau    # helper constant
-    gc_ir = 1/np.sqrt(1 + np.square(K_ir))     # direct transfer function for filter
+    print('frq_r')
+    print(frq_ir)
+    if args.filter == 'gaus':
+        gc_ir = tf(frq_ir,1.0/(2*np.pi*tau)) # direct transfer function for filter
+        gc = tf(frq,1.0/(2*np.pi*tau))
+    elif args.filter == 'rc':
+        gc_ir = tf(frq_ir,tau) # direct transfer function for filter        
+        gc = tf(frq,tau) # direct transfer function for filter        
+    #gc_ir = 1/np.sqrt(1 + np.square(K_ir))     # direct transfer function for filter
     # use same freq range as signal fft to apply
-    K = 2*math.pi*frq*tau    # helper constant
-    gc = 1/np.sqrt(1 + np.square(K))     # direct transfer function for filter
+    print('frq')
+    print(frq)
+    #gc = 1/np.sqrt(1 + np.square(K))     # direct transfer function for filter
 
     # plot impulse response and transfer function
     fig2, ax2 = plt.subplots(2,1)
@@ -92,17 +139,18 @@ if __name__ == '__main__':
     ax2[0].set_xlabel('Time (microsec)')
     ax2[0].set_ylabel('Arb. Units.')
     ax2[0].set_title('Filter Impulse Response')
+    print('gc_ir')
+    print(gc_ir)
     
     ax2[1].plot(frq_ir,gc_ir) 
     #ax2[1].semilogx(frq,gc) # freq
     #ax2[1].semilogx(frq,np.abs(Y_ir)) # freq
-    ax2[1].plot([fc,fc],[0,1], color='k', linestyle='-', linewidth=2) 
-    ax2[1].plot([fc/10,fc*10],[1/math.sqrt(2),1/math.sqrt(2)], color='k', linestyle='-', linewidth=2) 
+    #ax2[1].plot([fc,fc],[0,1], color='k', linestyle='-', linewidth=2) 
+    #ax2[1].plot([fc/10,fc*10],[1/math.sqrt(2),1/math.sqrt(2)], color='k', linestyle='-', linewidth=2) 
     ax2[1].set_xlabel('Frequency spectrum [Hz]')
     ax2[1].set_ylabel('Amplitude')
     ax2[0].text(0.01, 0.9, os.path.basename(args.file[0]), transform=ax2[0].transAxes, color='green', fontsize=10)
     ax2[0].text(0.01, 0.8, r'$\tau$={0:.2f}$\mu$s'.format(tau*1e6), transform=ax2[0].transAxes, color='green', fontsize=10)
-
 
 
     fig2.savefig(saveFilename + '_filter.png',bbox_inches='tight')
@@ -144,7 +192,8 @@ if __name__ == '__main__':
 
     ax4[1].plot(frq,np.abs(Yp), color='black') 
     iYp = iY[range(1,(n-1)/2+1)] # one sided
-    ax4[1].plot(frq,np.abs(iYp), color='red') #color='red') # amplitude freq.
+    #ax4[1].plot(frq,np.abs(iYp), color='red') # amplitude freq.
+    ax4[1].plot(frq,np.abs(Yp_f), color='red') # amplitude freq.
     ax4[1].set_title('Transfer function filtered response')
     ax4[1].set_xlabel('Frequency [Hz]')
     ax4[1].set_ylabel('Arb. Units.')
@@ -199,22 +248,40 @@ if __name__ == '__main__':
     Fs_samples = Fs*Fs_frac
     T_c_samples = len(y_c_samples)/Fs_samples # length in time of signal
     frq_samples = np.arange(len(y_c_samples))/T_c_samples # freq axis
+    frq_samples = frq_samples[range(len(y_c_samples)/2)]
+    
+
+    print(' frq_samples.shape ' + str( frq_samples.shape) )
+    print(' frq_samples ' + str( frq_samples) )
+
+    print(' Yp_c_samples.shape ' + str( Yp_c_samples.shape) )
+    print(' Yp_c_samples ' + str( Yp_c_samples) )
 
     # deconvolute with filter transfer function
-    K_samples = 2*math.pi*frq_samples*tau     # helper constant, use same freq range as signal fft to apply
-    gc_samples = 1/np.sqrt(1 + np.square(K_samples))     # direct transfer function for filter
-    Yp_c_samples_deconv = Yp_c_samples/gc_samples[range(len(y_c_samples)/2)] # deconvolve
-    Ym_c_samples_deconv = np.flipud(np.flipud(Ym_c_samples)/gc_samples[range(len(y_c_samples)/2)])
+    #K_samples = 2*math.pi*frq_samples*tau     # helper constant, use same freq range as signal fft to apply
+    if args.filter == 'gaus':
+        gc_samples = tf(frq_samples, 1.0/(2*np.pi*tau))
+    elif args.filter == 'rc':
+        gc_samples = tf(frq_samples, tau)
+
+    print(' gc_samples.shape ' + str( gc_samples.shape) )
+    print(' gc_samples ' + str( gc_samples) )
+
+    gc_samples = gc_samples*np.sum(Yp_c_samples)/np.sum(gc_samples)
+    #1/np.sqrt(1 + np.square(K_samples))     # direct transfer function for filter
+    Yp_c_samples_deconv = Yp_c_samples/gc_samples # deconvolve
+    Ym_c_samples_deconv = np.flipud(np.flipud(Ym_c_samples)/gc_samples)
+
+    print(' Yp_c_samples_deconv ' + str( Yp_c_samples_deconv) )
+
+    #Ym_c_samples_deconv[1:len(Yp_c_samples_deconv)] = np.flipud(Yp_c_samples_deconv[1:len(Yp_c_samples_deconv)])
+    Yp_c_samples_deconv = Yp_c_samples_deconv*np.sum(Yp_c_samples)/np.sum((Yp_c_samples_deconv))
+    Ym_c_samples_deconv = Ym_c_samples_deconv*np.sum(Ym_c_samples)/np.sum((Ym_c_samples_deconv))    
     Y_c_samples_deconv = np.concatenate((Yp_c_samples_deconv,Ym_c_samples_deconv))
-    
 
-
-
-
-    # inverse FFT to time domain
-    
+    # inverse FFT to time domain    
     y_c_samples_deconv = np.fft.ifft(Y_c_samples_deconv)
-    y_c_samples_deconv = y_c_samples_deconv*np.sum(y_c_samples)/np.sum(y_c_samples_deconv) # normalize
+    y_c_samples_deconv = y_c_samples_deconv*np.sum(y_c_samples)/np.sum((y_c_samples_deconv)) # normalize
 
 
 
@@ -222,9 +289,8 @@ if __name__ == '__main__':
     print(' Fs ' + str( Fs ))
     print(' Fs_frac ' + str( Fs_frac) )
     print(' Fs_samples ' + str( Fs_samples) )
-    print(' frq ' + str( frq_samples) )
-    print(' frq_c ' + str( frq_samples) )
-    print(' frq_samples ' + str( frq_samples) )
+   # print(' frq_c ' + str( frq_samples) )
+    #print(' frq_samples ' + str( frq_samples) )
     print(' y_c_samples.shape ' + str( y_c_samples.shape))
     print(' Y_c_samples.shape ' + str( Y_c_samples.shape))
     print(' Yp_c_samples.shape ' + str( Yp_c_samples.shape) )
@@ -233,6 +299,7 @@ if __name__ == '__main__':
     print(' Ym_c_samples_deconv.shape ' + str( Ym_c_samples_deconv.shape) )
     print(' Y_c_samples_deconv.shape ' + str( Y_c_samples_deconv.shape) )
     print(' y_c_samples_deconv.shape ' + str( y_c_samples_deconv.shape) )
+    print(' y_c_samples_deconv ' + str( y_c_samples_deconv) )
 
 
     
@@ -246,11 +313,20 @@ if __name__ == '__main__':
     ax5[0].set_ylabel('Arb. Units.')
     ax5[0].set_title('ADC Response')
 
-    #ax5[1].plot(range(len(Y_c_samples)),np.abs(Y_c_samples), color='blue') 
-    ax5[1].plot(frq_samples[range(len(y_c_samples)/2)],np.abs(Yp_c_samples), color='blue') 
-    ax5[1].plot(frq_samples[range(len(y_c_samples)/2)],np.abs(Yp_c_samples_deconv), color='green') 
-    #ax5[1].plot(frq_samples[range(len(y_c_samples)/2)],gc_samples[range(len(y_c_samples)/2)], color='red') 
-    #ax5[1].plot(frq_samples[range(len(y_c_samples)/2)],np.abs(Yp_c_samples_deconv), color='black') 
+    print('np.sum(y_c_samples) = ' + str(np.sum(y_c_samples)))
+    print('np.sum(y_c_samples_deconv) = ' + str(np.sum(np.abs(y_c_samples_deconv))))
+
+    
+    #ax5[1].semilogy(frq_samples, np.abs(Y_c_samples), color='blue') 
+    ax5[1].semilogy(frq_samples, np.abs(Yp_c_samples), color='blue') 
+    ax5[1].semilogy(frq_samples, np.abs(np.flipud(Ym_c_samples)), color='blue') 
+    ax5[1].semilogy(frq_samples, np.abs(Yp_c_samples_deconv), color='green')  
+    ax5[1].semilogy(frq_samples, np.abs(np.flipud(Ym_c_samples_deconv)), color='yellow') 
+   #ax5[1].semilogyy(frq_samples, np.abs(np.flipud(Ym_c_samples_deconv)), color='black') 
+    #ax5[1].semilogy(np.abs(Y_c_samples_deconv), color='black') 
+    ax5[1].semilogy(frq_samples, np.abs(gc_samples), color='cyan') 
+    #ax5[1].semilogy(frq_samples[range(len(y_c_samples)/2)],gc_samples[range(len(y_c_samples)/2)], color='red') 
+    #ax5[1].semilogy(frq_samples[range(len(y_c_samples)/2)],np.abs(Yp_c_samples_deconv), color='black') 
     ax5[1].set_xlabel('Frequency [Hz]')
     ax5[1].set_ylabel('Arb. Units.')
 
@@ -258,7 +334,11 @@ if __name__ == '__main__':
     ax5[0].text(0.01, 0.9, os.path.basename(args.file[0]), transform=ax5[0].transAxes, color='green', fontsize=10)
     ax5[0].text(0.01, 0.8, r'$\tau$={0:.2f}$\mu$s'.format(tau*1e6), transform=ax5[0].transAxes, color='green', fontsize=10)
     ax5[0].text(0.01, 0.7, 'ADC {0:.2f}Msps'.format(args.freq), transform=ax5[0].transAxes, color='green', fontsize=10)
-                           
+
+    plt.show()
+    
+    ans = raw_input('dd')
+
     fig5.savefig(saveFilename + '_filtered_signal_sampled.png',bbox_inches='tight')
     
 
@@ -278,6 +358,18 @@ if __name__ == '__main__':
 
 
 
+    fig0, ax0 = plt.subplots(4,1)
+    ax0[0].semilogy(frq_samples,1/abs(gc_samples)) # time signal
+    ax0[1].plot(t_ir,y_ir) # impulse response
+    yc_tmp = np.convolve(y,y_ir)
+    ax0[2].plot(yc_tmp) # impulse response
+    yc_tmp2 = np.convolve(y_ir,y)
+    ax0[2].plot(yc_tmp2,color='red') # impulse response
+    ax0[3].plot(yc_tmp/yc_tmp2,color='black') # impulse response
+    print('y shape ' + str(y.shape))
+    print('y_ir shape ' + str(y_ir.shape))
+    print('yc_tmp shape ' + str(yc_tmp.shape))
+    print('yc_tmp2 shape ' + str(yc_tmp2.shape))
 
 
     if not args.batch:
