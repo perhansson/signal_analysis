@@ -14,23 +14,24 @@
 
 
 
-for f in `ls ../../data/garfield_data/*.txt` 
+for f in `ls ../../data/garfield_data/*_Y.txt` 
 do 
 	echo "File: $f"; 
 
-	python diffusion_effect.py $f
+	#python diffusion_effect.py $f
+	#continue
 
-	continue
-
-	for t in 0.5 1 2 5 10
+	for t in 1.0
 	do 
 		echo "tau: $t";
-		for freq in 0.5 1.0 2.0 5.0 10.0
+		for d in 100.0
 		do 
-			echo "freq: $t";			
-			python waveform_ana.py -t $t $f --freq $freq --batch; 
+			echo "distance: $d";
+			for freq in 0.5 1.0 2.0
+			do 
+				echo "freq: $freq";			
+				python waveform_ana.py --tau $t --diffusion --filter gaus $f --distance $d --freq $freq --batch; 
+			done			
 		done
-
 	done
-
 done
